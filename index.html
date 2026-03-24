@@ -99,6 +99,26 @@ input:checked+.tsl:before{transform:translateX(20px)}
 .cbtn{width:100%;padding:12px;border:1px solid var(--bds);background:transparent;border-radius:var(--rs);font-size:14px;cursor:pointer;color:var(--t1);font-family:'Noto Sans TC',sans-serif;font-weight:500}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A1917;color:#fff;padding:10px 22px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200;white-space:nowrap;font-family:'Noto Sans TC',sans-serif}
 .toast.show{opacity:1}
+
+.balance-card{background:var(--b);border-radius:var(--ra);margin:16px 16px 12px;padding:18px 20px;color:white}
+.balance-label{font-size:12px;opacity:.8;margin-bottom:4px}
+.balance-num{font-size:32px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-1px}
+.balance-sub{font-size:12px;opacity:.7;margin-top:4px}
+.cc-card{background:var(--sf);border-radius:var(--ra);border:1px solid var(--bd);margin:0 16px 12px;padding:16px 18px}
+.cc-title{font-size:11px;font-weight:700;color:var(--t3);letter-spacing:.07em;text-transform:uppercase;margin-bottom:12px}
+.cc-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)}
+.cc-row:last-child{border-bottom:none}
+.cc-info{display:flex;align-items:center;gap:10px}
+.cc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.cc-name{font-size:14px;font-weight:500;color:var(--t1)}
+.cc-date{font-size:12px;color:var(--t3);margin-top:1px}
+.cc-check{width:20px;height:20px;border-radius:6px;border:2px solid var(--bds);background:transparent;cursor:pointer;appearance:none;-webkit-appearance:none;flex-shrink:0;transition:all .15s;position:relative}
+.cc-check:checked{background:var(--g);border-color:var(--g)}
+.cc-check:checked::after{content:'✓';position:absolute;color:white;font-size:12px;font-weight:700;top:50%;left:50%;transform:translate(-50%,-50%)}
+.cc-row.done .cc-name{text-decoration:line-through;opacity:.5}
+.cc-row.done .cc-date{opacity:.4}
+.cc-alert{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;background:#FAEEDA;color:#633806}
+
 section{display:none}section.on{display:block}
 </style>
 </head>
@@ -138,6 +158,45 @@ section{display:none}section.on{display:block}
       </div>
     </div>
     <button class="sbtn" id="sbtn" onclick="submit()">送出記帳</button>
+
+  <div class="balance-card" id="balanceCard">
+    <div class="balance-label">總資產餘額</div>
+    <div class="balance-num" id="balanceNum">計算中…</div>
+    <div class="balance-sub" id="balanceSub">載入所有記錄中</div>
+  </div>
+  <div class="cc-card">
+    <div class="cc-title">信用卡帳單提醒</div>
+    <div class="cc-row" id="cc-ctbc">
+      <div class="cc-info">
+        <div class="cc-dot" style="background:#E24B4A"></div>
+        <div>
+          <div class="cc-name">中信銀行</div>
+          <div class="cc-date">每月 7 日出帳</div>
+        </div>
+      </div>
+      <input type="checkbox" class="cc-check" onchange="ccCheck('ctbc',this)">
+    </div>
+    <div class="cc-row" id="cc-fubon">
+      <div class="cc-info">
+        <div class="cc-dot" style="background:#378ADD"></div>
+        <div>
+          <div class="cc-name">富邦銀行</div>
+          <div class="cc-date">每月 20 日出帳</div>
+        </div>
+      </div>
+      <input type="checkbox" class="cc-check" onchange="ccCheck('fubon',this)">
+    </div>
+    <div class="cc-row" id="cc-esun">
+      <div class="cc-info">
+        <div class="cc-dot" style="background:#1D9E75"></div>
+        <div>
+          <div class="cc-name">玉山銀行</div>
+          <div class="cc-date">每月 21 日出帳</div>
+        </div>
+      </div>
+      <input type="checkbox" class="cc-check" onchange="ccCheck('esun',this)">
+    </div>
+  </div>
   </section>
 
   <section id="report">
@@ -175,7 +234,7 @@ section{display:none}section.on{display:block}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-const API='https://script.google.com/macros/s/AKfycbxIoYsdmZNjbonxcRtYcnyqXNxVBCh_DduL_t2N_agQ95E3ubAikeyYp3jvfqyXAqw8/exec';
+const API='https://script.google.com/macros/s/AKfycbxji7TU4uDd1Z_CObFJdxo7FaW_r5ccB84-mFmcuS26fxe-77ygf-ZHMhiAZK4DzVR4/exec';
 const MN=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 const CATS=[
   {n:'收入',i:true},
@@ -371,6 +430,64 @@ function fmt(n){return Math.round(n).toLocaleString();}
 function toast(msg){const t=document.getElementById('tst');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
 
 init();
+
+async function loadBalance() {
+  try {
+    const now = new Date();
+    const resp = await fetch(API);
+    const all = await resp.json();
+    const inc = all.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
+    const exp = all.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+    const bal = inc - exp;
+    document.getElementById('balanceNum').textContent = (bal<0?'-':'') + 'NT$' + fmt(Math.abs(bal));
+    document.getElementById('balanceSub').textContent = `收入 $${fmt(inc)} — 支出 $${fmt(exp)}`;
+  } catch(e) {
+    document.getElementById('balanceNum').textContent = '載入失敗';
+    document.getElementById('balanceSub').textContent = '';
+  }
+}
+
+// Credit card check state (resets each month)
+const CC_CARDS = ['ctbc','fubon','esun'];
+const CC_DATES = {ctbc:7, fubon:20, esun:21};
+
+function ccKey(id) {
+  const now = new Date();
+  return `cc_${id}_${now.getFullYear()}_${now.getMonth()+1}`;
+}
+
+function initCC() {
+  const now = new Date();
+  const today = now.getDate();
+  CC_CARDS.forEach(id => {
+    const key = ccKey(id);
+    const checked = localStorage.getItem(key) === '1';
+    const row = document.getElementById('cc-'+id);
+    const cb = row.querySelector('.cc-check');
+    cb.checked = checked;
+    if (checked) row.classList.add('done');
+
+    // Show alert badge if within 3 days of due date
+    const dueDay = CC_DATES[id];
+    const diff = dueDay - today;
+    if (!checked && diff >= 0 && diff <= 3) {
+      const badge = document.createElement('span');
+      badge.className = 'cc-alert';
+      badge.textContent = diff === 0 ? '今天！' : `${diff} 天後`;
+      row.querySelector('.cc-info').appendChild(badge);
+    }
+  });
+}
+
+function ccCheck(id, el) {
+  localStorage.setItem(ccKey(id), el.checked ? '1' : '0');
+  const row = document.getElementById('cc-'+id);
+  row.classList.toggle('done', el.checked);
+}
+
+loadBalance();
+initCC();
+
 </script>
 </body>
 </html>
