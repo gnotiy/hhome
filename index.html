@@ -212,6 +212,16 @@ section{display:none}section.on{display:block}
     </div>
     <div class="card"><div class="slbl">支出分類</div><div id="cbd"></div></div>
     <div class="card"><div class="slbl" style="margin-bottom:8px">本月明細</div><div class="tl" id="txl"></div></div>
+
+    <div class="card" id="sharedSection" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--b);flex-shrink:0"></div>
+        <div class="slbl" style="margin-bottom:0">共同記帳</div>
+      </div>
+      <div class="m3" id="sharedMetrics" style="margin-bottom:12px"></div>
+      <div id="sharedBD" style="margin-bottom:10px"></div>
+      <div class="tl" id="sharedTX"></div>
+    </div>
   </section>
 
   <section id="inst">
@@ -314,7 +324,7 @@ async function submit(){
     } else {
       await send({date,category:selCat,amount:amt,note,installment:''});
     }
-    await new Promise(r=>setTimeout(r,2000));
+    await new Promise(r=>setTimeout(r,800));
     const [y,m]=date.split('-');
     const rows=await get(y,m);
     showOv(y,m,rows,isInst?`分期建立！每月 NT$${Math.ceil(amt/selM).toLocaleString()}，共 ${selM} 期`:`NT$${amt.toLocaleString()} 已記錄`);
@@ -326,10 +336,13 @@ async function submit(){
 }
 
 async function get(y,m){
-  try{
-    const r=await fetch(`${API}?year=${y}&month=${m}`);
-    return await r.json();
-  }catch(e){return[];}
+  try{ return await (await fetch(`${API}?year=${y}&month=${m}`)).json(); }catch(e){return[];}
+}
+async function getBoth(y,m){
+  try{ return await (await fetch(`${API}?year=${y}&month=${m}&source=both`)).json(); }catch(e){return{main:[],shared:[]};}
+}
+async function getSource(y,m,src){
+  try{ return await (await fetch(`${API}?year=${y}&month=${m}&source=${src}`)).json(); }catch(e){return[];}
 }
 
 function showOv(y,m,rows,sub){
@@ -358,9 +371,19 @@ async function loadRep(){
   document.getElementById('mlbl').textContent=cY+'年 '+MN[cMo];
   document.getElementById('m3').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--t3);font-size:13px">載入中…</div>';
   document.getElementById('cbd').innerHTML='';document.getElementById('txl').innerHTML='';
+  document.getElementById('sharedSection').style.display='none';
   try{
-    const rows=await get(cY,String(cMo+1).padStart(2,'0'));
-    renderM(rows);renderTrend();renderBD(rows);renderTX(rows);
+    // fetch personal + shared in parallel
+    const [both, sharedRows] = await Promise.all([
+      getBoth(cY, String(cMo+1).padStart(2,'0')),
+      getSource(cY, String(cMo+1).padStart(2,'0'), 'shared')
+    ]);
+    const rows = both.main || [];
+    renderM(rows);
+    renderTrend(both);
+    renderBD(rows);
+    renderTX(rows);
+    renderShared(sharedRows);
   }catch(e){toast('載入失敗');}
 }
 
@@ -374,11 +397,17 @@ function renderM(rows){
     <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
 }
 
-async function renderTrend(){
+async function renderTrend(curBoth){
   const lbls=[],incs=[],exps=[],fs=[];
-  for(let i=5;i>=0;i--){let m=cMo-i,y=cY;while(m<0){m+=12;y--;}lbls.push(MN[m]);fs.push(get(y,String(m+1).padStart(2,'0')));}
+  for(let i=5;i>=0;i--){
+    let m=cMo-i,y=cY;while(m<0){m+=12;y--;}
+    lbls.push(MN[m]);
+    if(i===0 && curBoth){ fs.push(Promise.resolve(curBoth)); }
+    else { fs.push(getBoth(y,String(m+1).padStart(2,'0'))); }
+  }
   const res=await Promise.all(fs);
-  res.forEach(rows=>{
+  res.forEach(both=>{
+    const rows=(both.main||[]);
     incs.push(rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0));
     exps.push(rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0));
   });
@@ -412,6 +441,35 @@ function renderTX(rows){
   }).join('');
 }
 
+
+function renderShared(rows) {
+  const sec = document.getElementById('sharedSection');
+  if (!rows || !rows.length) { sec.style.display='none'; return; }
+  sec.style.display='block';
+
+  const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
+  const exp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+  const bal = inc - exp;
+  document.getElementById('sharedMetrics').innerHTML = `
+    <div class="mc"><div class="ml">收入</div><div class="mn gi">$${fmt(inc)}</div></div>
+    <div class="mc"><div class="ml">支出</div><div class="mn ri">$${fmt(exp)}</div></div>
+    <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
+
+  const tots={};
+  rows.filter(r=>r.category!=='收入').forEach(r=>{tots[r.category]=(tots[r.category]||0)+Number(r.amount);});
+  const srt=Object.entries(tots).sort((a,b)=>b[1]-a[1]);
+  const mx=srt[0]?srt[0][1]:1;
+  document.getElementById('sharedBD').innerHTML = srt.length
+    ? srt.map(([c,a])=>`<div class="br"><span class="bn">${c}</span><div class="bbg"><div class="bf" style="width:${Math.round(a/mx*100)}%;background:var(--b)"></div></div><span class="ba">$${fmt(a)}</span></div>`).join('')
+    : '';
+
+  const sorted=[...rows].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  document.getElementById('sharedTX').innerHTML = sorted.slice(0,30).map(r=>{
+    const isI=r.category==='收入';
+    return`<div class="ti"><div><div style="display:flex;align-items:center;gap:5px"><span class="tc">${r.category}</span><span style="font-size:11px;color:var(--t3)">${String(r.date).slice(5)}</span></div>${r.note?`<div class="tn">${r.note}</div>`:''}</div><span class="${isI?'tai':'tae'}">${isI?'+':'-'}$${fmt(Number(r.amount))}</span></div>`;
+  }).join('');
+}
+
 function renderInsts(){
   const el=document.getElementById('il');
   if(!insts.length){el.innerHTML='<div class="emp">目前沒有分期付款</div>';return;}
@@ -433,11 +491,10 @@ init();
 
 async function loadBalance() {
   try {
-    const now = new Date();
-    const resp = await fetch(API);
-    const all = await resp.json();
-    const inc = all.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
-    const exp = all.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+    const all = await (await fetch(API)).json();
+    const rows = Array.isArray(all) ? all : (all.main || []);
+    const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
+    const exp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
     const bal = inc - exp;
     document.getElementById('balanceNum').textContent = (bal<0?'-':'') + 'NT$' + fmt(Math.abs(bal));
     document.getElementById('balanceSub').textContent = `收入 $${fmt(inc)} — 支出 $${fmt(exp)}`;
