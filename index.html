@@ -344,6 +344,11 @@ async function getBoth(y,m){
 async function getSource(y,m,src){
   try{ return await (await fetch(`${API}?year=${y}&month=${m}&source=${src}`)).json(); }catch(e){return[];}
 }
+async function getBatch(endY, endM, count){
+  try{
+    return await (await fetch(`${API}?months=${count}&endyear=${endY}&endmonth=${endM}&source=both`)).json();
+  }catch(e){return{};}
+}
 
 function showOv(y,m,rows,sub){
   document.getElementById('mbdg').textContent=y+'年 '+MN[parseInt(m)-1];
@@ -373,14 +378,13 @@ async function loadRep(){
   document.getElementById('cbd').innerHTML='';document.getElementById('txl').innerHTML='';
   document.getElementById('sharedSection').style.display='none';
   try{
-    // fetch personal + shared in parallel
-    const [both, sharedRows] = await Promise.all([
-      getBoth(cY, String(cMo+1).padStart(2,'0')),
-      getSource(cY, String(cMo+1).padStart(2,'0'), 'shared')
-    ]);
-    const rows = both.main || [];
+    const batch = await getBatch(cY, cMo+1, 6);
+    const curKey = cY+'-'+String(cMo+1).padStart(2,'0');
+    const cur = batch[curKey] || {main:[], shared:[]};
+    const rows = cur.main || [];
+    const sharedRows = cur.shared || [];
     renderM(rows, sharedRows);
-    renderTrend(both, sharedRows);
+    renderTrend(batch, cY, cMo);
     renderBD(rows, sharedRows);
     renderTX(rows);
     renderShared(sharedRows);
@@ -399,27 +403,21 @@ function renderM(rows, sharedRows){
     <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
 }
 
-async function renderTrend(curBoth, curShared){
-  const lbls=[],incs=[],exps=[],fs=[],fsShared=[];
+async function renderTrend(batch, endY, endMo){
+  const lbls=[],incs=[],exps=[];
   for(let i=5;i>=0;i--){
-    let m=cMo-i,y=cY;while(m<0){m+=12;y--;}
+    let m=endMo-i,y=endY;while(m<0){m+=12;y--;}
     lbls.push(MN[m]);
-    if(i===0 && curBoth){ fs.push(Promise.resolve(curBoth)); fsShared.push(Promise.resolve(curShared||[])); }
-    else {
-      fs.push(getBoth(y,String(m+1).padStart(2,'0')));
-      fsShared.push(getSource(y,String(m+1).padStart(2,'0'),'shared'));
-    }
-  }
-  const [res, resS] = await Promise.all([Promise.all(fs), Promise.all(fsShared)]);
-  res.forEach((both,i)=>{
-    const rows = both.main||[];
-    const shared = Array.isArray(resS[i]) ? resS[i] : [];
+    const key=y+'-'+String(m+1).padStart(2,'0');
+    const d=batch[key]||{main:[],shared:[]};
+    const rows=d.main||[];
+    const shared=d.shared||[];
     incs.push(rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0));
     exps.push(
-      rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0) +
-      shared.filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0)
+      rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0)+
+      shared.filter(r=>r.category!=='安の'&&Number(r.amount)>0&&Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0)
     );
-  });
+  }
   if(tc)tc.destroy();
   const dk=window.matchMedia('(prefers-color-scheme:dark)').matches;
   tc=new Chart(document.getElementById('tc'),{
@@ -432,97 +430,6 @@ async function renderTrend(curBoth, curShared){
         y:{grid:{color:dk?'rgba(255,255,255,.05)':'rgba(0,0,0,.06)'},ticks:{color:dk?'#6A6662':'#9A9692',font:{size:11},callback:v=>v>=1000?(v/1000)+'k':v}}}}
   });
 }
-
-function renderBD(rows, sharedRows){
-  const tots = {};
-  // 個人支出（藍色）
-  rows.filter(r=>r.category!=='收入').forEach(r=>{
-    if(!tots[r.category]) tots[r.category]={p:0,s:0};
-    tots[r.category].p += Number(r.amount);
-  });
-  // 共同支出÷2，排除「安の」，金額超過10萬的視為異常跳過
-  (sharedRows||[]).filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).forEach(r=>{
-    const half = Number(r.amount) / 2;
-    if(!tots[r.category]) tots[r.category]={p:0,s:0};
-    tots[r.category].s += half;
-  });
-
-  const srt = Object.entries(tots)
-    .map(([c,v])=>([c, v.p+v.s, v.s, v.p===0 && v.s>0]))
-    .sort((a,b)=>b[1]-a[1]);
-  const mx = srt[0] ? srt[0][1] : 1;
-
-  document.getElementById('cbd').innerHTML = srt.length
-    ? srt.map(([c,total,s,sharedOnly])=>`
-      <div class="br">
-        <span class="bn" style="${sharedOnly?'color:#8B7355':''}">${c}</span>
-        <div class="bbg"><div class="bf" style="width:${Math.round(total/mx*100)}%;background:${sharedOnly?'#E8D5B0':'#378ADD'}"></div></div>
-        <div style="min-width:80px;text-align:right;flex-shrink:0">
-          <div class="ba">$${fmt(total)}</div>
-          ${s>0?`<div style="font-size:10px;color:#8B7355;margin-top:1px">共同½ $${fmt(s)}</div>`:''}
-        </div>
-      </div>`).join('')
-    : '<div class="emp">本月無支出記錄</div>';
-}
-
-function renderTX(rows){
-  const el=document.getElementById('txl');
-  if(!rows.length){el.innerHTML='<div class="emp">本月尚無記錄</div>';return;}
-  const srt=[...rows].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  el.innerHTML=srt.map(r=>{
-    const isI=r.category==='收入';
-    const it=r.installment?'<span class="tit">分期</span>':'';
-    return`<div class="ti"><div><div style="display:flex;align-items:center;gap:5px"><span class="tc">${r.category}</span>${it}<span style="font-size:11px;color:var(--t3)">${String(r.date).slice(5)}</span></div>${r.note?`<div class="tn">${r.note}</div>`:''}</div><span class="${isI?'tai':'tae'}">${isI?'+':'-'}$${fmt(Number(r.amount))}</span></div>`;
-  }).join('');
-}
-
-
-function renderShared(rows) {
-  const sec = document.getElementById('sharedSection');
-  if (!rows || !rows.length) { sec.style.display='none'; return; }
-  sec.style.display='block';
-
-  const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const exp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const bal = inc - exp;
-  document.getElementById('sharedMetrics').innerHTML = `
-    <div class="mc"><div class="ml">收入</div><div class="mn gi">$${fmt(inc)}</div></div>
-    <div class="mc"><div class="ml">支出</div><div class="mn ri">$${fmt(exp)}</div></div>
-    <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
-
-  const tots={};
-  rows.filter(r=>r.category!=='收入').forEach(r=>{tots[r.category]=(tots[r.category]||0)+Number(r.amount);});
-  const srt=Object.entries(tots).sort((a,b)=>b[1]-a[1]);
-  const mx=srt[0]?srt[0][1]:1;
-  document.getElementById('sharedBD').innerHTML = srt.length
-    ? srt.map(([c,a])=>`<div class="br"><span class="bn">${c}</span><div class="bbg"><div class="bf" style="width:${Math.round(a/mx*100)}%;background:var(--b)"></div></div><span class="ba">$${fmt(a)}</span></div>`).join('')
-    : '';
-
-  const sorted=[...rows].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  document.getElementById('sharedTX').innerHTML = sorted.slice(0,30).map(r=>{
-    const isI=r.category==='收入';
-    return`<div class="ti"><div><div style="display:flex;align-items:center;gap:5px"><span class="tc">${r.category}</span><span style="font-size:11px;color:var(--t3)">${String(r.date).slice(5)}</span></div>${r.note?`<div class="tn">${r.note}</div>`:''}</div><span class="${isI?'tai':'tae'}">${isI?'+':'-'}$${fmt(Number(r.amount))}</span></div>`;
-  }).join('');
-}
-
-function renderInsts(){
-  const el=document.getElementById('il');
-  if(!insts.length){el.innerHTML='<div class="emp">目前沒有分期付款</div>';return;}
-  const now=new Date();
-  el.innerHTML=insts.map(inst=>{
-    const paid=Math.min(inst.months,(now.getFullYear()-inst.startYear)*12+(now.getMonth()-inst.startMonth)+1);
-    const rem=inst.months-paid;const pct=Math.round(paid/inst.months*100);
-    const ed=new Date(inst.startYear,inst.startMonth+inst.months-1,1);
-    const es=ed.getFullYear()+'/'+(ed.getMonth()+1);
-    return`<div class="ic"><div style="display:flex;justify-content:space-between;align-items:start"><div><div style="font-size:14px;font-weight:700">${inst.note||inst.category}</div><div style="font-size:12px;color:var(--t3);margin-top:2px">${inst.category} · 共 NT$${fmt(inst.total)} · 每月 NT$${fmt(inst.monthly)}</div></div><button onclick="delI(${inst.id})" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;padding:0">✕</button></div><div class="ipr"><div class="ib" style="width:${pct}%"></div></div><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--t3)">${paid}/${inst.months} 期 · 到 ${es}</span><span class="bdg ${rem>0?'bbl':'bgl'}">${rem>0?`剩 ${rem} 期`:'已完成'}</span></div></div>`;
-  }).join('');
-}
-
-function delI(id){insts=insts.filter(i=>i.id!==id);localStorage.setItem('fi',JSON.stringify(insts));renderInsts();toast('已刪除分期');}
-function fmt(n){return Math.round(n).toLocaleString();}
-function toast(msg){const t=document.getElementById('tst');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
-
-init();
 
 async function loadBalance() {
   try {
