@@ -390,7 +390,7 @@ async function loadRep(){
 function renderM(rows, sharedRows){
   const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
   const pExp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const sExp = (sharedRows||[]).reduce((s,r)=>s+Number(r.amount),0);
+  const sExp = (sharedRows||[]).filter(r=>r.category!=='安の').reduce((s,r)=>s+Number(r.amount),0);
   const exp = pExp + sExp;
   const bal = inc - exp;
   document.getElementById('m3').innerHTML=`
@@ -435,34 +435,29 @@ async function renderTrend(curBoth, curShared){
 
 function renderBD(rows, sharedRows){
   const tots = {};
-  // 個人支出
   rows.filter(r=>r.category!=='收入').forEach(r=>{
     if(!tots[r.category]) tots[r.category]={p:0,s:0};
     tots[r.category].p += Number(r.amount);
   });
-  // 共同支出
-  (sharedRows||[]).forEach(r=>{
+  // 共同支出排除「安の」
+  (sharedRows||[]).filter(r=>r.category!=='安の').forEach(r=>{
     if(!tots[r.category]) tots[r.category]={p:0,s:0};
     tots[r.category].s += Number(r.amount);
   });
 
   const srt = Object.entries(tots)
-    .map(([c,v])=>([c, v.p+v.s, v.p, v.s]))
+    .map(([c,v])=>([c, v.p+v.s, v.s]))
     .sort((a,b)=>b[1]-a[1]);
   const mx = srt[0] ? srt[0][1] : 1;
 
   document.getElementById('cbd').innerHTML = srt.length
-    ? srt.map(([c,total,p,s])=>`
-      <div class="br" style="align-items:center">
+    ? srt.map(([c,total,s])=>`
+      <div class="br">
         <span class="bn">${c}</span>
-        <div class="bbg" style="position:relative">
-          <div class="bf" style="width:${Math.round(total/mx*100)}%;position:relative">
-            ${s>0?`<div style="position:absolute;right:0;top:0;height:100%;width:${Math.round(s/total*100)}%;background:var(--b);border-radius:0 3px 3px 0"></div>`:''}
-          </div>
-        </div>
-        <div style="min-width:80px;text-align:right">
-          <span class="ba">$${fmt(total)}</span>
-          ${s>0?`<div style="font-size:10px;color:var(--b)">共 $${fmt(s)}</div>`:''}
+        <div class="bbg"><div class="bf" style="width:${Math.round(total/mx*100)}%"></div></div>
+        <div style="min-width:80px;text-align:right;flex-shrink:0">
+          <div class="ba">$${fmt(total)}</div>
+          ${s>0?`<div style="font-size:10px;color:var(--b);margin-top:1px">含共同 $${fmt(s)}</div>`:''}
         </div>
       </div>`).join('')
     : '<div class="emp">本月無支出記錄</div>';
@@ -543,7 +538,7 @@ async function loadBalance() {
     const pExp = personalRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
 
     // 共同：只扣支出（共同的錢已從個人收入出去了）
-    const sExp = sharedRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+    const sExp = sharedRows.filter(r=>r.category!=='安の').reduce((s,r)=>s+Number(r.amount),0);
 
     const totalExp = pExp + sExp;
     const bal = pInc - totalExp;
