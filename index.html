@@ -526,20 +526,19 @@ init();
 
 async function loadBalance() {
   try {
-    // 同時抓個人全部 + 共同全部
+    const today = new Date().toISOString().split('T')[0];
     const [personal, shared] = await Promise.all([
       fetch(API).then(r=>r.json()),
       fetch(API+'?source=shared').then(r=>r.json())
     ]);
 
-    const personalRows = Array.isArray(personal) ? personal : (personal.main || []);
-    const sharedRows   = Array.isArray(shared)   ? shared   : [];
+    const personalRows = (Array.isArray(personal) ? personal : (personal.main || []))
+      .filter(r => String(r.date) <= today);
+    const sharedRows = (Array.isArray(shared) ? shared : [])
+      .filter(r => String(r.date) <= today);
 
-    // 個人：收入 - 支出
     const pInc = personalRows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
     const pExp = personalRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-
-    // 共同：只扣支出（共同的錢已從個人收入出去了）
     const sExp = sharedRows.filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
 
     const totalExp = pExp + sExp;
