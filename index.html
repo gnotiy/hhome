@@ -388,7 +388,7 @@ async function loadRep(){
     renderBD(rows, sharedRows);
     renderTX(rows);
     renderShared(sharedRows);
-  }catch(e){toast('載入失敗');}
+  }catch(e){toast('載入失敗: '+e.message);console.error('loadRep error:',e);}
 }
 
 function renderM(rows, sharedRows){
@@ -456,7 +456,8 @@ async function loadBalance() {
       `收入 $${fmt(pInc)} — 個人支出 $${fmt(pExp)} — 共同支出½ $${fmt(sExp)}`;
   } catch(e) {
     document.getElementById('balanceNum').textContent = '載入失敗';
-    document.getElementById('balanceSub').textContent = '';
+    document.getElementById('balanceSub').textContent = e.message || String(e);
+    console.error('loadBalance error:', e);
   }
 }
 
