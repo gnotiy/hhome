@@ -379,37 +379,46 @@ async function loadRep(){
       getSource(cY, String(cMo+1).padStart(2,'0'), 'shared')
     ]);
     const rows = both.main || [];
-    renderM(rows);
-    renderTrend(both);
-    renderBD(rows);
+    renderM(rows, sharedRows);
+    renderTrend(both, sharedRows);
+    renderBD(rows, sharedRows);
     renderTX(rows);
     renderShared(sharedRows);
   }catch(e){toast('載入失敗');}
 }
 
-function renderM(rows){
-  const inc=rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const exp=rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const bal=inc-exp;
+function renderM(rows, sharedRows){
+  const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
+  const pExp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+  const sExp = (sharedRows||[]).reduce((s,r)=>s+Number(r.amount),0);
+  const exp = pExp + sExp;
+  const bal = inc - exp;
   document.getElementById('m3').innerHTML=`
     <div class="mc"><div class="ml">收入</div><div class="mn gi">$${fmt(inc)}</div></div>
     <div class="mc"><div class="ml">支出</div><div class="mn ri">$${fmt(exp)}</div></div>
     <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
 }
 
-async function renderTrend(curBoth){
-  const lbls=[],incs=[],exps=[],fs=[];
+async function renderTrend(curBoth, curShared){
+  const lbls=[],incs=[],exps=[],fs=[],fsShared=[];
   for(let i=5;i>=0;i--){
     let m=cMo-i,y=cY;while(m<0){m+=12;y--;}
     lbls.push(MN[m]);
-    if(i===0 && curBoth){ fs.push(Promise.resolve(curBoth)); }
-    else { fs.push(getBoth(y,String(m+1).padStart(2,'0'))); }
+    if(i===0 && curBoth){ fs.push(Promise.resolve(curBoth)); fsShared.push(Promise.resolve(curShared||[])); }
+    else {
+      fs.push(getBoth(y,String(m+1).padStart(2,'0')));
+      fsShared.push(getSource(y,String(m+1).padStart(2,'0'),'shared'));
+    }
   }
-  const res=await Promise.all(fs);
-  res.forEach(both=>{
-    const rows=(both.main||[]);
+  const [res, resS] = await Promise.all([Promise.all(fs), Promise.all(fsShared)]);
+  res.forEach((both,i)=>{
+    const rows = both.main||[];
+    const shared = Array.isArray(resS[i]) ? resS[i] : [];
     incs.push(rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0));
-    exps.push(rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0));
+    exps.push(
+      rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0) +
+      shared.reduce((s,r)=>s+Number(r.amount),0)
+    );
   });
   if(tc)tc.destroy();
   const dk=window.matchMedia('(prefers-color-scheme:dark)').matches;
@@ -424,10 +433,39 @@ async function renderTrend(curBoth){
   });
 }
 
-function renderBD(rows){
-  const tots={};rows.filter(r=>r.category!=='收入').forEach(r=>{tots[r.category]=(tots[r.category]||0)+Number(r.amount);});
-  const srt=Object.entries(tots).sort((a,b)=>b[1]-a[1]);const mx=srt[0]?srt[0][1]:1;
-  document.getElementById('cbd').innerHTML=srt.length?srt.map(([c,a])=>`<div class="br"><span class="bn">${c}</span><div class="bbg"><div class="bf" style="width:${Math.round(a/mx*100)}%"></div></div><span class="ba">$${fmt(a)}</span></div>`).join(''):'<div class="emp">本月無支出記錄</div>';
+function renderBD(rows, sharedRows){
+  const tots = {};
+  // 個人支出
+  rows.filter(r=>r.category!=='收入').forEach(r=>{
+    if(!tots[r.category]) tots[r.category]={p:0,s:0};
+    tots[r.category].p += Number(r.amount);
+  });
+  // 共同支出
+  (sharedRows||[]).forEach(r=>{
+    if(!tots[r.category]) tots[r.category]={p:0,s:0};
+    tots[r.category].s += Number(r.amount);
+  });
+
+  const srt = Object.entries(tots)
+    .map(([c,v])=>([c, v.p+v.s, v.p, v.s]))
+    .sort((a,b)=>b[1]-a[1]);
+  const mx = srt[0] ? srt[0][1] : 1;
+
+  document.getElementById('cbd').innerHTML = srt.length
+    ? srt.map(([c,total,p,s])=>`
+      <div class="br" style="align-items:center">
+        <span class="bn">${c}</span>
+        <div class="bbg" style="position:relative">
+          <div class="bf" style="width:${Math.round(total/mx*100)}%;position:relative">
+            ${s>0?`<div style="position:absolute;right:0;top:0;height:100%;width:${Math.round(s/total*100)}%;background:var(--b);border-radius:0 3px 3px 0"></div>`:''}
+          </div>
+        </div>
+        <div style="min-width:80px;text-align:right">
+          <span class="ba">$${fmt(total)}</span>
+          ${s>0?`<div style="font-size:10px;color:var(--b)">共 $${fmt(s)}</div>`:''}
+        </div>
+      </div>`).join('')
+    : '<div class="emp">本月無支出記錄</div>';
 }
 
 function renderTX(rows){
@@ -491,13 +529,28 @@ init();
 
 async function loadBalance() {
   try {
-    const all = await (await fetch(API)).json();
-    const rows = Array.isArray(all) ? all : (all.main || []);
-    const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
-    const exp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-    const bal = inc - exp;
+    // 同時抓個人全部 + 共同全部
+    const [personal, shared] = await Promise.all([
+      fetch(API).then(r=>r.json()),
+      fetch(API+'?source=shared').then(r=>r.json())
+    ]);
+
+    const personalRows = Array.isArray(personal) ? personal : (personal.main || []);
+    const sharedRows   = Array.isArray(shared)   ? shared   : [];
+
+    // 個人：收入 - 支出
+    const pInc = personalRows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
+    const pExp = personalRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+
+    // 共同：只扣支出（共同的錢已從個人收入出去了）
+    const sExp = sharedRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
+
+    const totalExp = pExp + sExp;
+    const bal = pInc - totalExp;
+
     document.getElementById('balanceNum').textContent = (bal<0?'-':'') + 'NT$' + fmt(Math.abs(bal));
-    document.getElementById('balanceSub').textContent = `收入 $${fmt(inc)} — 支出 $${fmt(exp)}`;
+    document.getElementById('balanceSub').textContent =
+      `收入 $${fmt(pInc)} — 個人支出 $${fmt(pExp)} — 共同支出 $${fmt(sExp)}`;
   } catch(e) {
     document.getElementById('balanceNum').textContent = '載入失敗';
     document.getElementById('balanceSub').textContent = '';
