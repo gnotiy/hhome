@@ -390,7 +390,7 @@ async function loadRep(){
 function renderM(rows, sharedRows){
   const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
   const pExp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const sExp = (sharedRows||[]).filter(r=>r.category!=='安の').reduce((s,r)=>s+Number(r.amount)/2,0);
+  const sExp = (sharedRows||[]).filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
   const exp = pExp + sExp;
   const bal = inc - exp;
   document.getElementById('m3').innerHTML=`
@@ -417,7 +417,7 @@ async function renderTrend(curBoth, curShared){
     incs.push(rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0));
     exps.push(
       rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0) +
-      shared.filter(r=>r.category!=='安の').reduce((s,r)=>s+Number(r.amount)/2,0)
+      shared.filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0)
     );
   });
   if(tc)tc.destroy();
@@ -435,32 +435,31 @@ async function renderTrend(curBoth, curShared){
 
 function renderBD(rows, sharedRows){
   const tots = {};
-  // 個人支出
+  // 個人支出（藍色）
   rows.filter(r=>r.category!=='收入').forEach(r=>{
-    if(!tots[r.category]) tots[r.category]={p:0,s:0,isShared:false};
+    if(!tots[r.category]) tots[r.category]={p:0,s:0};
     tots[r.category].p += Number(r.amount);
   });
-  // 共同支出÷2，排除「安の」
-  (sharedRows||[]).filter(r=>r.category!=='安の').forEach(r=>{
+  // 共同支出÷2，排除「安の」，金額超過10萬的視為異常跳過
+  (sharedRows||[]).filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).forEach(r=>{
     const half = Number(r.amount) / 2;
-    if(!tots[r.category]) tots[r.category]={p:0,s:0,isShared:true};
+    if(!tots[r.category]) tots[r.category]={p:0,s:0};
     tots[r.category].s += half;
-    tots[r.category].isShared = true;
   });
 
   const srt = Object.entries(tots)
-    .map(([c,v])=>([c, v.p+v.s, v.s, v.isShared && v.p===0]))
+    .map(([c,v])=>([c, v.p+v.s, v.s, v.p===0 && v.s>0]))
     .sort((a,b)=>b[1]-a[1]);
   const mx = srt[0] ? srt[0][1] : 1;
 
   document.getElementById('cbd').innerHTML = srt.length
     ? srt.map(([c,total,s,sharedOnly])=>`
       <div class="br">
-        <span class="bn" style="${sharedOnly?'color:#D85A30':''}">${c}</span>
-        <div class="bbg"><div class="bf" style="width:${Math.round(total/mx*100)}%;background:${sharedOnly?'#F0997B':'var(--r)'}"></div></div>
+        <span class="bn" style="${sharedOnly?'color:#8B7355':''}">${c}</span>
+        <div class="bbg"><div class="bf" style="width:${Math.round(total/mx*100)}%;background:${sharedOnly?'#E8D5B0':'#378ADD'}"></div></div>
         <div style="min-width:80px;text-align:right;flex-shrink:0">
           <div class="ba">$${fmt(total)}</div>
-          ${s>0?`<div style="font-size:10px;color:#D85A30;margin-top:1px">共同½ $${fmt(s)}</div>`:''}
+          ${s>0?`<div style="font-size:10px;color:#8B7355;margin-top:1px">共同½ $${fmt(s)}</div>`:''}
         </div>
       </div>`).join('')
     : '<div class="emp">本月無支出記錄</div>';
@@ -541,7 +540,7 @@ async function loadBalance() {
     const pExp = personalRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
 
     // 共同：只扣支出（共同的錢已從個人收入出去了）
-    const sExp = sharedRows.filter(r=>r.category!=='安の').reduce((s,r)=>s+Number(r.amount)/2,0);
+    const sExp = sharedRows.filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
 
     const totalExp = pExp + sExp;
     const bal = pInc - totalExp;
