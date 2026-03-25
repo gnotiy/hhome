@@ -528,14 +528,12 @@ async function loadBalance() {
   try {
     const today = new Date().toISOString().split('T')[0];
     const [personal, shared] = await Promise.all([
-      fetch(API).then(r=>r.json()),
-      fetch(API+'?source=shared').then(r=>r.json())
+      fetch(`${API}?maxdate=${today}`).then(r=>r.json()),
+      fetch(`${API}?source=shared&maxdate=${today}`).then(r=>r.json())
     ]);
 
-    const personalRows = (Array.isArray(personal) ? personal : (personal.main || []))
-      .filter(r => String(r.date) <= today);
-    const sharedRows = (Array.isArray(shared) ? shared : [])
-      .filter(r => String(r.date) <= today);
+    const personalRows = Array.isArray(personal) ? personal : (personal.main || []);
+    const sharedRows   = Array.isArray(shared)   ? shared   : [];
 
     const pInc = personalRows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
     const pExp = personalRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
