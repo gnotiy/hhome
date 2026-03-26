@@ -325,10 +325,7 @@ async function submit(){
     } else {
       await send({date,category:selCat,amount:amt,note,installment:''});
     }
-    await new Promise(r=>setTimeout(r,800));
-    const [y,m]=date.split('-');
-    const rows=await get(y,m);
-    showOv(y,m,rows,isInst?`分期建立！每月 NT$${Math.ceil(amt/selM).toLocaleString()}，共 ${selM} 期`:`NT$${amt.toLocaleString()} 已記錄`);
+    toast(isInst?`分期建立！每月 NT$${Math.ceil(amt/selM).toLocaleString()}，共 ${selM} 期`:`NT$${amt.toLocaleString()} 已記錄 ✓`);
     document.getElementById('amt').value='';document.getElementById('note').value='';
     document.getElementById('itog').checked=false;document.getElementById('ibox').style.display='none';
     document.querySelectorAll('.cb').forEach(b=>b.classList.remove('on'));selCat=null;
