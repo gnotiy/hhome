@@ -55,7 +55,7 @@ input:checked+.tsl:before{transform:translateX(20px)}
 .pill{padding:5px 13px;border-radius:20px;font-size:13px;cursor:pointer;border:1px solid var(--bds);background:transparent;color:var(--t2);font-family:'Noto Sans TC',sans-serif;transition:all .12s}
 .pill.on{background:var(--b);color:#fff;border-color:var(--b)}
 .iprev{font-size:12px;color:var(--t3);margin-top:8px;min-height:16px}
-.sbtn{width:100%;padding:15px;background:var(--g);color:#fff;border:none;border-radius:var(--ra);font-size:15px;font-weight:700;cursor:pointer;font-family:'Noto Sans TC',sans-serif;transition:opacity .15s,transform .1s;margin:0 16px;width:calc(100% - 32px)}
+.sbtn{width:100%;padding:15px;background:#E8D5B0;color:#5C4A2A;border:1px solid #C9B48A;border-radius:var(--ra);font-size:15px;font-weight:700;cursor:pointer;font-family:'Noto Sans TC',sans-serif;transition:opacity .15s,transform .1s;margin:0 16px;width:calc(100% - 32px)}
 .sbtn:active:not(:disabled){transform:scale(.98);opacity:.85}
 .sbtn:disabled{opacity:.5;cursor:not-allowed}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle;margin-right:6px}
@@ -100,10 +100,12 @@ input:checked+.tsl:before{transform:translateX(20px)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A1917;color:#fff;padding:10px 22px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200;white-space:nowrap;font-family:'Noto Sans TC',sans-serif}
 .toast.show{opacity:1}
 
-.balance-card{background:var(--b);border-radius:var(--ra);margin:16px 16px 12px;padding:18px 20px;color:white}
+.balance-card{background:var(--sf);border-radius:var(--ra);margin:16px 16px 12px;padding:14px 20px;color:var(--t1);border:1px solid var(--bds);cursor:pointer;user-select:none}
+.balance-num{font-size:28px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-1px;transition:filter .25s;color:var(--t1)}
+.balance-num.hidden{filter:blur(8px)}
+.balance-sub{font-size:12px;color:var(--t3);margin-top:4px;transition:filter .25s}
+.balance-sub.hidden{filter:blur(6px)}
 .balance-label{font-size:12px;opacity:.8;margin-bottom:4px}
-.balance-num{font-size:32px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-1px}
-.balance-sub{font-size:12px;opacity:.7;margin-top:4px}
 .cc-card{background:var(--sf);border-radius:var(--ra);border:1px solid var(--bd);margin:0 16px 12px;padding:16px 18px}
 .cc-title{font-size:11px;font-weight:700;color:var(--t3);letter-spacing:.07em;text-transform:uppercase;margin-bottom:12px}
 .cc-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)}
@@ -159,10 +161,13 @@ section{display:none}section.on{display:block}
     </div>
     <button class="sbtn" id="sbtn" onclick="submit()">送出記帳</button>
 
-  <div class="balance-card" id="balanceCard">
-    <div class="balance-label">總資產餘額</div>
-    <div class="balance-num" id="balanceNum">計算中…</div>
-    <div class="balance-sub" id="balanceSub">載入所有記錄中</div>
+  <div class="balance-card" id="balanceCard" onclick="toggleBalance()">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div class="balance-label" style="margin-bottom:0;color:var(--t3)">總資產餘額</div>
+      <span id="balanceEye" style="font-size:13px;color:var(--t3)">點擊顯示</span>
+    </div>
+    <div class="balance-num hidden" id="balanceNum">計算中…</div>
+    <div class="balance-sub hidden" id="balanceSub">載入所有記錄中</div>
   </div>
   <div class="cc-card">
     <div class="cc-title">信用卡帳單提醒</div>
@@ -213,15 +218,6 @@ section{display:none}section.on{display:block}
     <div class="card"><div class="slbl">支出分類</div><div id="cbd"></div></div>
     <div class="card"><div class="slbl" style="margin-bottom:8px">本月明細</div><div class="tl" id="txl"></div></div>
 
-    <div class="card" id="sharedSection" style="display:none">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <div style="width:8px;height:8px;border-radius:50%;background:var(--b);flex-shrink:0"></div>
-        <div class="slbl" style="margin-bottom:0">共同記帳</div>
-      </div>
-      <div class="m3" id="sharedMetrics" style="margin-bottom:12px"></div>
-      <div id="sharedBD" style="margin-bottom:10px"></div>
-      <div class="tl" id="sharedTX"></div>
-    </div>
   </section>
 
   <section id="inst">
@@ -399,7 +395,11 @@ function renderM(rows, sharedRows){
   const bal = inc - exp;
   document.getElementById('m3').innerHTML=`
     <div class="mc"><div class="ml">收入</div><div class="mn gi">$${fmt(inc)}</div></div>
-    <div class="mc"><div class="ml">支出</div><div class="mn ri">$${fmt(exp)}</div></div>
+    <div class="mc">
+      <div class="ml">支出</div>
+      <div class="mn ri">$${fmt(exp)}</div>
+      <div style="font-size:10px;color:var(--t3);margin-top:4px;line-height:1.5">個人 $${fmt(pExp)}<br>共同½ $${fmt(sExp)}</div>
+    </div>
     <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
 }
 
@@ -577,6 +577,17 @@ function ccCheck(id, el) {
   row.classList.toggle('done', el.checked);
 }
 
+let balanceVisible = false;
+function toggleBalance(){
+  balanceVisible = !balanceVisible;
+  const num = document.getElementById('balanceNum');
+  const sub = document.getElementById('balanceSub');
+  const eye = document.getElementById('balanceEye');
+  num.classList.toggle('hidden', !balanceVisible);
+  sub.classList.toggle('hidden', !balanceVisible);
+  eye.textContent = balanceVisible ? '點擊隱藏' : '點擊顯示';
+}
+init();
 loadBalance();
 initCC();
 
