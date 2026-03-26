@@ -212,8 +212,6 @@ section{display:none}section.on{display:block}
         <button onclick="cm(1)">›</button>
       </div>
       <div class="m3" id="m3"></div>
-      <div class="slbl">收支走勢（近6月）</div>
-      <div class="cw"><canvas id="tc"></canvas></div>
     </div>
     <div class="card"><div class="slbl">支出分類</div><div id="cbd"></div></div>
     <div class="card"><div class="slbl" style="margin-bottom:8px">本月明細</div><div class="tl" id="txl"></div></div>
@@ -340,9 +338,6 @@ async function getBoth(y,m){
 async function getSource(y,m,src){
   try{ return await (await fetch(`${API}?year=${y}&month=${m}&source=${src}`)).json(); }catch(e){return[];}
 }
-let _batchCache = null;
-let _batchCacheKey = '';
-
 async function getBatch(endY, endM, count){
   const key = `${endY}-${endM}-${count}`;
   if(_batchCacheKey === key && _batchCache) return _batchCache;
@@ -405,45 +400,9 @@ async function loadRep(){
     renderM(rows, sharedRows);
     renderBD(rows, sharedRows);
     renderTX(rows);
-    renderTrendAsync(cY, cMo, {main:rows, shared:sharedRows});
   }catch(e){toast('載入失敗: '+e.message);}
 }
 
-async function renderTrendAsync(endY, endMo, curData){
-  try{
-    if(tc) tc.destroy();
-    const lbls=[];
-    for(let i=5;i>=0;i--){let m=endMo-i,y=endY;while(m<0){m+=12;y--;}lbls.push(MN[m]);}
-    const dk=window.matchMedia('(prefers-color-scheme:dark)').matches;
-    tc=new Chart(document.getElementById('tc'),{
-      type:'bar',data:{labels:lbls,datasets:[
-        {label:'收入',data:[0,0,0,0,0,0],backgroundColor:'#5DCAA5',borderRadius:4},
-        {label:'支出',data:[0,0,0,0,0,0],backgroundColor:'#F09595',borderRadius:4}
-      ]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-        scales:{x:{grid:{display:false},ticks:{color:dk?'#6A6662':'#9A9692',font:{size:11}}},
-          y:{grid:{color:dk?'rgba(255,255,255,.05)':'rgba(0,0,0,.06)'},ticks:{color:dk?'#6A6662':'#9A9692',font:{size:11},callback:v=>v>=1000?(v/1000)+'k':v}}}}
-    });
-    for(let i=5;i>=0;i--){
-      let m=endMo-i,y=endY;while(m<0){m+=12;y--;}
-      const mo2=String(m+1).padStart(2,'0');
-      let mRows,sRows;
-      if(i===0&&curData){mRows=curData.main||[];sRows=curData.shared||[];}
-      else{
-        const [mr,sr]=await Promise.all([
-          fetch(`${API}?year=${y}&month=${mo2}`).then(r=>r.json()).catch(()=>[]),
-          fetch(`${API}?year=${y}&month=${mo2}&source=shared`).then(r=>r.json()).catch(()=>[])
-        ]);
-        mRows=Array.isArray(mr)?mr:[];sRows=Array.isArray(sr)?sr:[];
-      }
-      const idx=5-i;
-      tc.data.datasets[0].data[idx]=mRows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
-      tc.data.datasets[1].data[idx]=mRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0)
-        +sRows.filter(r=>r.category!=='安の'&&Number(r.amount)>0&&Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
-      tc.update('none');
-    }
-  }catch(e){console.error('trend:',e);}
-}
 
 function renderM(rows, sharedRows){
   const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
