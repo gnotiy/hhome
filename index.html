@@ -340,10 +340,31 @@ async function getBoth(y,m){
 async function getSource(y,m,src){
   try{ return await (await fetch(`${API}?year=${y}&month=${m}&source=${src}`)).json(); }catch(e){return[];}
 }
+let _batchCache = null;
+let _batchCacheKey = '';
+
 async function getBatch(endY, endM, count){
+  const key = `${endY}-${endM}-${count}`;
+  if(_batchCacheKey === key && _batchCache) return _batchCache;
   try{
-    return await (await fetch(`${API}?months=${count}&endyear=${endY}&endmonth=${endM}&source=both`)).json();
-  }catch(e){return{};}
+    // Fetch main and shared in parallel, each only reads its own sheet
+    const [mainData, sharedData] = await Promise.all([
+      fetch(`${API}?months=${count}&endyear=${endY}&endmonth=${endM}&source=main`).then(r=>r.json()).catch(()=>({})),
+      fetch(`${API}?months=${count}&endyear=${endY}&endmonth=${endM}&source=shared`).then(r=>r.json()).catch(()=>({}))
+    ]);
+    // Merge into {month: {main:[], shared:[]}} format
+    const result = {};
+    const months = new Set([...Object.keys(mainData), ...Object.keys(sharedData)]);
+    months.forEach(m=>{
+      result[m] = {
+        main: mainData[m] ? (mainData[m].main || mainData[m]) : [],
+        shared: sharedData[m] ? (sharedData[m].shared || sharedData[m]) : []
+      };
+    });
+    _batchCache = result;
+    _batchCacheKey = key;
+    return result;
+  }catch(e){ return {}; }
 }
 
 function showOv(y,m,rows,sub){
