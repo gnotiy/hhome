@@ -390,22 +390,59 @@ function cm(d){
 }
 
 async function loadRep(){
+  const mo = String(cMo+1).padStart(2,'0');
   document.getElementById('mlbl').textContent=cY+'年 '+MN[cMo];
   document.getElementById('m3').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--t3);font-size:13px">載入中…</div>';
   document.getElementById('cbd').innerHTML='';document.getElementById('txl').innerHTML='';
-  document.getElementById('sharedSection').style.display='none';
+
   try{
-    const batch = await getBatch(cY, cMo+1, 6);
-    const curKey = cY+'-'+String(cMo+1).padStart(2,'0');
-    const cur = batch[curKey] || {main:[], shared:[]};
-    const rows = cur.main || [];
-    const sharedRows = cur.shared || [];
+    const [mainRes, sharedRes] = await Promise.all([
+      fetch(`${API}?year=${cY}&month=${mo}`).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}?year=${cY}&month=${mo}&source=shared`).then(r=>r.json()).catch(()=>[])
+    ]);
+    const rows = Array.isArray(mainRes) ? mainRes : [];
+    const sharedRows = Array.isArray(sharedRes) ? sharedRes : [];
     renderM(rows, sharedRows);
-    renderTrend(batch, cY, cMo);
     renderBD(rows, sharedRows);
     renderTX(rows);
-    renderShared(sharedRows);
-  }catch(e){toast('載入失敗');}
+    renderTrendAsync(cY, cMo, {main:rows, shared:sharedRows});
+  }catch(e){toast('載入失敗: '+e.message);}
+}
+
+async function renderTrendAsync(endY, endMo, curData){
+  try{
+    if(tc) tc.destroy();
+    const lbls=[];
+    for(let i=5;i>=0;i--){let m=endMo-i,y=endY;while(m<0){m+=12;y--;}lbls.push(MN[m]);}
+    const dk=window.matchMedia('(prefers-color-scheme:dark)').matches;
+    tc=new Chart(document.getElementById('tc'),{
+      type:'bar',data:{labels:lbls,datasets:[
+        {label:'收入',data:[0,0,0,0,0,0],backgroundColor:'#5DCAA5',borderRadius:4},
+        {label:'支出',data:[0,0,0,0,0,0],backgroundColor:'#F09595',borderRadius:4}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{grid:{display:false},ticks:{color:dk?'#6A6662':'#9A9692',font:{size:11}}},
+          y:{grid:{color:dk?'rgba(255,255,255,.05)':'rgba(0,0,0,.06)'},ticks:{color:dk?'#6A6662':'#9A9692',font:{size:11},callback:v=>v>=1000?(v/1000)+'k':v}}}}
+    });
+    for(let i=5;i>=0;i--){
+      let m=endMo-i,y=endY;while(m<0){m+=12;y--;}
+      const mo2=String(m+1).padStart(2,'0');
+      let mRows,sRows;
+      if(i===0&&curData){mRows=curData.main||[];sRows=curData.shared||[];}
+      else{
+        const [mr,sr]=await Promise.all([
+          fetch(`${API}?year=${y}&month=${mo2}`).then(r=>r.json()).catch(()=>[]),
+          fetch(`${API}?year=${y}&month=${mo2}&source=shared`).then(r=>r.json()).catch(()=>[])
+        ]);
+        mRows=Array.isArray(mr)?mr:[];sRows=Array.isArray(sr)?sr:[];
+      }
+      const idx=5-i;
+      tc.data.datasets[0].data[idx]=mRows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
+      tc.data.datasets[1].data[idx]=mRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0)
+        +sRows.filter(r=>r.category!=='安の'&&Number(r.amount)>0&&Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
+      tc.update('none');
+    }
+  }catch(e){console.error('trend:',e);}
 }
 
 function renderM(rows, sharedRows){
