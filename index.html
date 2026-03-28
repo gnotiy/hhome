@@ -411,7 +411,7 @@ async function loadRep(){
 function renderM(rows, sharedRows){
   const inc = rows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
   const pExp = rows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-  const sExp = (sharedRows||[]).filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
+  const sExp = (sharedRows||[]).filter(r=>r.category!=='安の'&&r.category!=='結算'&&Number(r.amount)>0&&Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
   const exp = pExp + sExp;
   const bal = inc - exp;
   document.getElementById('m3').innerHTML=`
@@ -454,12 +454,13 @@ async function renderTrend(batch, endY, endMo){
 
 
 function renderBD(rows, sharedRows){
+  const SKIP = new Set(['安の','結算']);
   const tots = {};
   rows.filter(r=>r.category!=='收入').forEach(r=>{
     if(!tots[r.category]) tots[r.category]={p:0,s:0};
     tots[r.category].p += Number(r.amount);
   });
-  (sharedRows||[]).filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).forEach(r=>{
+  (sharedRows||[]).filter(r=>!SKIP.has(r.category) && Number(r.amount)>0 && Number(r.amount)<100000).forEach(r=>{
     const half = Number(r.amount)/2;
     if(!tots[r.category]) tots[r.category]={p:0,s:0};
     tots[r.category].s += half;
@@ -473,7 +474,7 @@ function renderBD(rows, sharedRows){
         <div class="bbg"><div class="bf" style="width:${Math.round(total/mx*100)}%;background:${sharedOnly?'#E8D5B0':'#378ADD'}"></div></div>
         <div style="min-width:80px;text-align:right;flex-shrink:0">
           <div class="ba">$${fmt(total)}</div>
-          ${s>0?`<div style="font-size:10px;color:#8B7355;margin-top:1px">共同½ $${fmt(s)}</div>`:''}
+          ${s>0&&total!==s?`<div style="font-size:10px;color:#8B7355;margin-top:1px">共同 $${fmt(s*2)} → ½ $${fmt(s)}</div>`:''}
         </div>
       </div>`).join('')
     :'<div class="emp">本月無支出記錄</div>';
@@ -546,7 +547,7 @@ async function loadBalance() {
 
     const pInc = personalRows.filter(r=>r.category==='收入').reduce((s,r)=>s+Number(r.amount),0);
     const pExp = personalRows.filter(r=>r.category!=='收入').reduce((s,r)=>s+Number(r.amount),0);
-    const sExp = sharedRows.filter(r=>r.category!=='安の' && Number(r.amount)>0 && Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
+    const sExp = sharedRows.filter(r=>r.category!=='安の'&&r.category!=='結算'&&Number(r.amount)>0&&Number(r.amount)<100000).reduce((s,r)=>s+Number(r.amount)/2,0);
 
     const totalExp = pExp + sExp;
     const bal = pInc - totalExp;
