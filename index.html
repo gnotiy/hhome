@@ -34,8 +34,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--t1);
 .cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .cb{padding:10px 2px;border:1px solid var(--bds);background:var(--sf);border-radius:var(--rs);font-size:13px;cursor:pointer;color:var(--t2);text-align:center;font-family:'Noto Sans TC',sans-serif;transition:all .12s;line-height:1.3}
 .cb:active{transform:scale(.95)}
-.cb.inc{border-color:var(--g);background:var(--gl);color:var(--gd)}
-.cb.on{background:var(--g);color:#fff;border-color:var(--g);font-weight:700}
+.cb.inc{border-color:#85B7EB;background:var(--bl);color:#185FA5}
+.cb.on{background:var(--b);color:#fff;border-color:var(--b);font-weight:700}
 .cb.inc.on{background:var(--gd);border-color:var(--gd)}
 .div{height:1px;background:var(--bd);margin:14px 0}
 .r2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
@@ -161,14 +161,6 @@ section{display:none}section.on{display:block}
     </div>
     <button class="sbtn" id="sbtn" onclick="submit()">送出記帳</button>
 
-  <div class="balance-card" id="balanceCard" onclick="toggleBalance()">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <div class="balance-label" style="margin-bottom:0;color:var(--t3)">總資產餘額</div>
-      <span id="balanceEye" style="font-size:13px;color:var(--t3)">點擊顯示</span>
-    </div>
-    <div class="balance-num hidden" id="balanceNum">計算中…</div>
-    <div class="balance-sub hidden" id="balanceSub">載入所有記錄中</div>
-  </div>
   <div class="cc-card">
     <div class="cc-title">信用卡帳單提醒</div>
     <div class="cc-row" id="cc-ctbc">
@@ -205,6 +197,11 @@ section{display:none}section.on{display:block}
   </section>
 
   <section id="report">
+  <div style="margin:0 16px 12px;background:var(--sf);border:1px solid var(--bds);border-radius:var(--ra);padding:14px 18px">
+    <div style="font-size:11px;font-weight:700;color:var(--t3);letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px">總資產餘額</div>
+    <div style="font-size:26px;font-weight:700;font-family:'DM Mono',monospace;color:var(--t1)" id="balanceNum">計算中…</div>
+    <div style="font-size:11px;color:var(--t3);margin-top:4px" id="balanceSub">載入中</div>
+  </div>
     <div class="card">
       <div class="mnav">
         <button onclick="cm(-1)">‹</button>
@@ -216,11 +213,16 @@ section{display:none}section.on{display:block}
     <div class="card"><div class="slbl">支出分類</div><div id="cbd"></div></div>
     <div class="card"><div class="slbl" style="margin-bottom:8px">本月明細</div><div class="tl" id="txl"></div></div>
 
-  <div style="padding:0 16px 8px;text-align:center">
+  <div style="padding:0 16px 8px;display:flex;justify-content:center;gap:8px">
     <a href="https://gnotiy.github.io/mm/" target="_blank"
-       style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--t3);text-decoration:none;padding:8px 16px;border:1px solid var(--bds);border-radius:20px;background:var(--sf);transition:opacity .15s"
+       style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--t3);text-decoration:none;padding:8px 16px;border:1px solid var(--bds);border-radius:20px;background:var(--sf);transition:opacity .15s"
        onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
       收支走勢分析 ↗
+    </a>
+    <a href="https://docs.google.com/spreadsheets/d/1CHkGnYv8uKF-WYmSLLQeXJXh0cDsb2Z0l_XOBmK79Tc" target="_blank"
+       style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--t3);text-decoration:none;padding:8px 16px;border:1px solid var(--bds);border-radius:20px;background:var(--sf);transition:opacity .15s"
+       onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
+      Sheets ↗
     </a>
   </div>
   </section>
@@ -484,11 +486,23 @@ function renderTX(rows){
   const el=document.getElementById('txl');
   if(!rows.length){el.innerHTML='<div class="emp">本月尚無記錄</div>';return;}
   const srt=[...rows].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  el.innerHTML=srt.map(r=>{
+  el.innerHTML=srt.map((r,i)=>{
     const isI=r.category==='收入';
     const it=r.installment?'<span class="tit">分期</span>':'';
-    return`<div class="ti"><div><div style="display:flex;align-items:center;gap:5px"><span class="tc">${r.category}</span>${it}<span style="font-size:11px;color:var(--t3)">${String(r.date).slice(5)}</span></div>${r.note?`<div class="tn">${r.note}</div>`:''}</div><span class="${isI?'tai':'tae'}">${isI?'+':'-'}$${fmt(Number(r.amount))}</span></div>`;
+    const key=encodeURIComponent(JSON.stringify({date:r.date,category:r.category,amount:r.amount,note:r.note}));
+    return`<div class="ti" id="ti-${i}"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px"><span class="tc">${r.category}</span>${it}<span style="font-size:11px;color:var(--t3)">${String(r.date).slice(5)}</span></div>${r.note?`<div class="tn">${r.note}</div>`:''}</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="${isI?'tai':'tae'}">${isI?'+':'-'}$${fmt(Number(r.amount))}</span><button onclick="deleteTx('${key}','ti-${i}')" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:15px;padding:2px 4px;opacity:.6" title="刪除">✕</button></div></div>`;
   }).join('');
+}
+
+async function deleteTx(key, rowId){
+  const r = JSON.parse(decodeURIComponent(key));
+  if(!confirm(`刪除「${r.category} $${r.amount}」？`)) return;
+  try{
+    await fetch(`${API}?deleterow=1&date=${encodeURIComponent(r.date)}&category=${encodeURIComponent(r.category)}&amount=${r.amount}&note=${encodeURIComponent(r.note||'')}`,{mode:'no-cors'});
+    document.getElementById(rowId).style.opacity='0.3';
+    document.getElementById(rowId).style.pointerEvents='none';
+    toast('已送出刪除請求');
+  }catch(e){ toast('刪除失敗'); }
 }
 
 function renderShared(rows){
@@ -599,16 +613,6 @@ function ccCheck(id, el) {
   row.classList.toggle('done', el.checked);
 }
 
-let balanceVisible = false;
-function toggleBalance(){
-  balanceVisible = !balanceVisible;
-  const num = document.getElementById('balanceNum');
-  const sub = document.getElementById('balanceSub');
-  const eye = document.getElementById('balanceEye');
-  num.classList.toggle('hidden', !balanceVisible);
-  sub.classList.toggle('hidden', !balanceVisible);
-  eye.textContent = balanceVisible ? '點擊隱藏' : '點擊顯示';
-}
 init();
 loadBalance();
 initCC();
