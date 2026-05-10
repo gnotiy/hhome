@@ -636,15 +636,15 @@ async function loadCat(){
       scales:{x:{grid:{display:false},ticks:{color:gc('#6A6662','#9A9692'),font:{size:12}}},y:{grid:{color:gc('rgba(255,255,255,.05)','rgba(0,0,0,.06)')},ticks:{color:gc('#6A6662','#9A9692'),font:{size:11},callback:v=>v>=1000?Math.round(v/1000)+'k':v}}}}});
 }
 
-/* ── 分期（從 Sheet 讀取，顯示尚未付清的項目）── */
+/* ── 分期（從 Sheet 讀取，只計算日期≤今天的為已付）── */
 async function renderInsts(){
   const el=document.getElementById('il');
   el.innerHTML='<div class="emp">載入中…</div>';
   try{
-    // 讀取所有 main 資料，找出有分期標記的記錄
     const allRows=await fetch(API).then(r=>r.json()).catch(()=>[]);
     const rows=Array.isArray(allRows)?allRows:(allRows.main||[]);
-    
+    const today=new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
     // 找出所有分期記錄，按備註+類別分組
     const groups={};
     rows.forEach(r=>{
@@ -652,32 +652,38 @@ async function renderInsts(){
       const m=String(r.installment).match(/^(\d+)\/(\d+)$/);
       if(!m)return;
       const cur=parseInt(m[1]),total=parseInt(m[2]);
-      // 用「類別+總期數+備註前綴」作為分組 key
       const noteBase=String(r.note||'').replace(/\s*\[分期\d+\/\d+\]\s*/g,'').trim();
       const key=r.category+'|'+total+'|'+noteBase;
-      if(!groups[key])groups[key]={category:r.category,note:noteBase,total:total,monthly:Number(r.amount),payments:[],dates:[]};
-      groups[key].payments.push(cur);
-      groups[key].dates.push(r.date);
+      if(!groups[key])groups[key]={category:r.category,note:noteBase,total:total,monthly:Number(r.amount),entries:[]};
+      groups[key].entries.push({cur,date:String(r.date||'')});
     });
 
-    // 篩選尚未付清的分期
+    // 篩選：只要有任何一期的日期在今天之後，就是「尚未付清」
     const active=Object.values(groups).filter(g=>{
-      const maxPaid=Math.max(...g.payments);
-      return maxPaid<g.total;
+      // 已付 = 日期 <= 今天的期數
+      const paidCount=g.entries.filter(e=>e.date<=today).length;
+      return paidCount<g.total;
     });
 
     if(!active.length){el.innerHTML='<div class="emp">目前沒有進行中的分期</div>';return;}
 
+    // 按剩餘期數排序（剩越多的排前面）
+    active.sort((a,b)=>{
+      const aPaid=a.entries.filter(e=>e.date<=today).length;
+      const bPaid=b.entries.filter(e=>e.date<=today).length;
+      return (a.total-aPaid)-(b.total-bPaid);
+    }).reverse();
+
     el.innerHTML=active.map(g=>{
-      const paid=Math.max(...g.payments);
-      const rem=g.total-paid;
-      const pct=Math.round(paid/g.total*100);
+      const paidCount=g.entries.filter(e=>e.date<=today).length;
+      const rem=g.total-paidCount;
+      const pct=Math.round(paidCount/g.total*100);
       const totalAmt=g.monthly*g.total;
-      // 計算預估結束月份
-      const lastDate=g.dates.sort().pop();
+      // 找最後一期的日期作為結束日
+      const allDates=g.entries.map(e=>e.date).sort();
+      const lastDate=allDates[allDates.length-1];
       const ld=new Date(lastDate);
-      const endDate=new Date(ld.getFullYear(),ld.getMonth()+rem,1);
-      const es=endDate.getFullYear()+'/'+(endDate.getMonth()+1);
+      const es=ld.getFullYear()+'/'+(ld.getMonth()+1);
       return`<div class="ic">
         <div style="display:flex;justify-content:space-between;align-items:start">
           <div><div style="font-size:14px;font-weight:700">${g.note||g.category}</div>
@@ -685,8 +691,8 @@ async function renderInsts(){
         </div>
         <div class="ipr"><div class="ib" style="width:${pct}%"></div></div>
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;color:var(--t3)">${paid}/${g.total} 期 · 預計到 ${es}</span>
-          <span class="bdg bbl">剩 ${rem} 期</span>
+          <span style="font-size:12px;color:var(--t3)">已付 ${paidCount}/${g.total} 期 · 到 ${es}</span>
+          <span class="bdg ${rem<=0?'bgl':'bbl'}">${rem<=0?'已完成':'剩 '+rem+' 期'}</span>
         </div>
       </div>`;
     }).join('');
