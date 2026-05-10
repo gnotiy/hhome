@@ -643,7 +643,17 @@ async function renderInsts(){
   try{
     const allRows=await fetch(API).then(r=>r.json()).catch(()=>[]);
     const rows=Array.isArray(allRows)?allRows:(allRows.main||[]);
-    const today=new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    const today=new Date().toISOString().split('T')[0];
+
+    // ★ Debug：找出有 installment 的記錄
+    const instRows=rows.filter(r=>r.installment && String(r.installment).trim()!=='');
+    console.log('總筆數:',rows.length,'有分期標記:',instRows.length);
+    if(instRows.length>0) console.log('分期範例:',JSON.stringify(instRows.slice(-3)));
+    else {
+      // 如果沒有 installment 欄位，看看最後幾筆資料的欄位有哪些
+      console.log('最後3筆資料欄位:',rows.length>0?Object.keys(rows[rows.length-1]):'無資料');
+      console.log('最後3筆:',JSON.stringify(rows.slice(-3)));
+    } // 'YYYY-MM-DD'
 
     // 找出所有分期記錄，按備註+類別分組
     const groups={};
