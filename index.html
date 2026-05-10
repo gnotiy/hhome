@@ -203,7 +203,6 @@ input:checked+.tsl:before{transform:translateX(20px)}
     <button class="tab on" onclick="sw('entry',this)">記帳</button>
     <button class="tab" onclick="sw('report',this)">月報表</button>
     <button class="tab" onclick="sw('overview',this)">本月概況</button>
-    <button class="tab" onclick="sw('trend',this)">走勢</button>
     <button class="tab" onclick="sw('yoy',this)">同期</button>
     <button class="tab" onclick="sw('yearly',this)">年度</button>
     <button class="tab" onclick="sw('catTab',this)">分類</button>
@@ -249,10 +248,8 @@ input:checked+.tsl:before{transform:translateX(20px)}
     </div>
     <div class="card">
       <div class="mnav"><button onclick="cm(-1)">‹</button><span class="mlbl" id="mlbl"></span><button onclick="cm(1)">›</button></div>
-      <div class="m3" id="m3"></div>
+      <div class="slbl" style="margin-bottom:8px">本月明細</div><div class="tl" id="txl" style="max-height:none"></div>
     </div>
-    <div class="card"><div class="slbl">支出分類</div><div id="cbd"></div></div>
-    <div class="card"><div class="slbl" style="margin-bottom:8px">本月明細</div><div class="tl" id="txl"></div></div>
     <div style="padding:0 14px 8px;display:flex;justify-content:center">
       <a href="https://docs.google.com/spreadsheets/d/1CHkGnYv8uKF-WYmSLLQeXJXh0cDsb2Z0l_XOBmK79Tc" target="_blank" style="font-size:13px;color:var(--t3);text-decoration:none;padding:8px 16px;border:1px solid var(--bds);border-radius:20px;background:var(--sf)">Sheets ↗</a>
     </div>
@@ -269,16 +266,6 @@ input:checked+.tsl:before{transform:translateX(20px)}
       <div class="donut-wrap"><canvas id="donutChart" width="130" height="130" style="flex-shrink:0"></canvas><div class="donut-legend" id="donutLegend"></div></div>
     </div>
     <div class="card"><div class="slbl">各類別明細</div><div class="cat-list" id="ovCatList"></div></div>
-  </section>
-
-  <!-- 走勢 -->
-  <section id="trend">
-    <div class="card">
-      <div class="mnav"><button onclick="shiftTrend(-1)">‹</button><span class="mlbl" id="trendLabel">—</span><button onclick="shiftTrend(1)">›</button></div>
-      <div class="m3" id="trendMetrics"><div style="grid-column:1/-1" class="lmsg">載入中…</div></div>
-      <div class="slbl">月收支走勢</div>
-      <div class="cw h220"><canvas id="trendChart"></canvas></div>
-    </div>
   </section>
 
   <!-- 同期比較 -->
@@ -349,12 +336,11 @@ const NOW=new Date();
 let selCat=null,selM=3,balHidden=false;
 let repY=NOW.getFullYear(),repMo=NOW.getMonth();
 let ovY=NOW.getFullYear(),ovM=NOW.getMonth();
-let trendEndY=NOW.getFullYear(),trendEndM=NOW.getMonth();
 let yoyY=NOW.getFullYear(),yoyM=NOW.getMonth();
 let yearlyYear=NOW.getFullYear();
 let catEndY=NOW.getFullYear(),catEndM=NOW.getMonth();
 let selectedCats=['餐費'];
-let trendC=null,catC=null,yearlyC=null,donutC=null;
+let catC=null,yearlyC=null,donutC=null;
 let insts=JSON.parse(localStorage.getItem('fi')||'[]');
 
 /* ── Cache ── */
@@ -381,7 +367,6 @@ async function forceSync(){
   const a=document.querySelector('section.on')?.id;
   if(a==='report'){await loadBal();await loadRep();}
   else if(a==='overview')await loadOverview();
-  else if(a==='trend')await loadTrend();
   else if(a==='yoy')await loadYoy();
   else if(a==='yearly')await loadYearly();
   else if(a==='catTab')await loadCat();
@@ -441,7 +426,7 @@ function sw(name,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));el.classList.add('on');
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById(name).classList.add('on');
-  const map={report:()=>{loadBal();loadRep();},overview:loadOverview,trend:loadTrend,yoy:loadYoy,yearly:loadYearly,catTab:loadCat,inst:renderInsts};
+  const map={report:()=>{loadBal();loadRep();},overview:loadOverview,yoy:loadYoy,yearly:loadYearly,catTab:loadCat,inst:renderInsts};
   map[name]?.();
 }
 
@@ -502,29 +487,9 @@ async function submit(){
 function cm(d){repMo+=d;if(repMo>11){repMo=0;repY++;}if(repMo<0){repMo=11;repY--;}loadRep();}
 async function loadRep(){
   document.getElementById('mlbl').textContent=repY+'年 '+MN[repMo];
-  document.getElementById('m3').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--t3);font-size:13px">載入中…</div>';
-  document.getElementById('cbd').innerHTML='';document.getElementById('txl').innerHTML='';
+  document.getElementById('txl').innerHTML='<div class="emp">載入中…</div>';
   const d=await getMonth(repY,repMo);
-  renderM(d.main,d.shared);renderBD(d.main,d.shared);renderTX(d.main);
-}
-function renderM(rows,shared){
-  const{inc,pExp,sExp,exp,bal}=calcMonth({main:rows,shared});
-  document.getElementById('m3').innerHTML=`
-    <div class="mc"><div class="ml">收入</div><div class="mn gi">$${fmt(inc)}</div></div>
-    <div class="mc"><div class="ml">支出</div><div class="mn ri">$${fmt(exp)}</div><div class="mn-sub">個 $${fmt(pExp)} + 共½ $${fmt(sExp)}</div></div>
-    <div class="mc"><div class="ml">結餘</div><div class="mn ${bal>=0?'bi':'ri'}">${bal<0?'-':''}$${fmt(Math.abs(bal))}</div></div>`;
-}
-function renderBD(rows,sharedRows){
-  const tots={};
-  rows.filter(r=>r.category!=='收入').forEach(r=>{if(!tots[r.category])tots[r.category]={p:0,s:0};tots[r.category].p+=Number(r.amount);});
-  (sharedRows||[]).forEach(r=>{const h=Number(r.amount)/2;if(!tots[r.category])tots[r.category]={p:0,s:0};tots[r.category].s+=h;});
-  const srt=Object.entries(tots).map(([c,v])=>([c,v.p+v.s,v.s,v.p===0&&v.s>0])).sort((a,b)=>b[1]-a[1]);
-  const mx=srt[0]?srt[0][1]:1;
-  document.getElementById('cbd').innerHTML=srt.length?srt.map(([c,total,s,so])=>`
-    <div class="br"><span class="bn" style="${so?'color:#8B7355':''}">${c}</span>
-    <div class="bbg"><div class="bf" style="width:${Math.round(total/mx*100)}%;background:${so?'#E8D5B0':'var(--b)'}"></div></div>
-    <div style="min-width:80px;text-align:right;flex-shrink:0"><div class="ba">$${fmt(total)}</div>${s>0&&total!==s?`<div style="font-size:10px;color:#8B7355;margin-top:1px">共½ $${fmt(s)}</div>`:''}</div></div>`).join('')
-    :'<div class="emp">本月無支出記錄</div>';
+  renderTX(d.main);
 }
 function renderTX(rows){
   const el=document.getElementById('txl');
@@ -589,25 +554,6 @@ async function loadOverview(){
     <div class="cat-row"><div class="cat-dot" style="background:${cc(n,i)}"></div><span class="cat-name">${n}</span>
     <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(v/sorted[0][1]*100).toFixed(0)}%;background:${cc(n,i)}"></div></div>
     <span class="cat-pct">${(v/total*100).toFixed(1)}%</span><span class="cat-amt">$${fmt(v)}</span></div>`).join('');
-}
-
-/* ── 走勢 ── */
-function shiftTrend(d){trendEndM+=d;if(trendEndM>11){trendEndM=0;trendEndY++;}if(trendEndM<0){trendEndM=11;trendEndY--;}loadTrend();}
-async function loadTrend(){
-  const months=getRange(trendEndY,trendEndM,6),s=months[0],e=months[5];
-  document.getElementById('trendLabel').textContent=`${s.y===e.y?'':s.y+'年 '}${MN[s.m]} — ${e.y}年 ${MN[e.m]}`;
-  document.getElementById('trendMetrics').innerHTML='<div style="grid-column:1/-1" class="lmsg">載入中…</div>';
-  const batch=await batchFetch(trendEndY,trendEndM,6),lbls=[],incs=[],exps=[];
-  for(const{y,m}of months){const k=`${y}-${String(m+1).padStart(2,'0')}`,{inc,exp}=calcMonth(batch[k]||{});lbls.push(MN[m]);incs.push(inc);exps.push(exp);}
-  const lk=`${e.y}-${String(e.m+1).padStart(2,'0')}`,{inc:li,exp:le,pExp,sExp,bal:lb}=calcMonth(batch[lk]||{});
-  document.getElementById('trendMetrics').innerHTML=`
-    <div class="mc"><div class="ml">收入</div><div class="mn gi">$${fmt(li)}</div></div>
-    <div class="mc"><div class="ml">支出</div><div class="mn ri">$${fmt(le)}</div><div class="mn-sub">個 $${fmt(pExp)} + 共½ $${fmt(sExp)}</div></div>
-    <div class="mc"><div class="ml">結餘</div><div class="mn ${lb>=0?'bi':'ri'}">${lb<0?'-':''}$${fmt(Math.abs(lb))}</div></div>`;
-  if(trendC)trendC.destroy();
-  trendC=new Chart(document.getElementById('trendChart'),{type:'bar',data:{labels:lbls,datasets:[{label:'收入',data:incs,backgroundColor:'#5DCAA5',borderRadius:5},{label:'支出',data:exps,backgroundColor:'#F09595',borderRadius:5}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},padding:10}}},
-      scales:{x:{grid:{display:false},ticks:{color:gc('#6A6662','#9A9692'),font:{size:11}}},y:{grid:{color:gc('rgba(255,255,255,.05)','rgba(0,0,0,.06)')},ticks:{color:gc('#6A6662','#9A9692'),font:{size:11},callback:v=>v>=1000?Math.round(v/1000)+'k':v}}}}});
 }
 
 /* ── 同期比較 ── */
@@ -690,33 +636,65 @@ async function loadCat(){
       scales:{x:{grid:{display:false},ticks:{color:gc('#6A6662','#9A9692'),font:{size:12}}},y:{grid:{color:gc('rgba(255,255,255,.05)','rgba(0,0,0,.06)')},ticks:{color:gc('#6A6662','#9A9692'),font:{size:11},callback:v=>v>=1000?Math.round(v/1000)+'k':v}}}}});
 }
 
-/* ── 分期（Bug fix：正確計算已付期數）── */
-function renderInsts(){
+/* ── 分期（從 Sheet 讀取，顯示尚未付清的項目）── */
+async function renderInsts(){
   const el=document.getElementById('il');
-  if(!insts.length){el.innerHTML='<div class="emp">目前沒有分期付款</div>';return;}
-  el.innerHTML=insts.map(inst=>{
-    // 從開始月到今天的月份差，+1 因為當月算已付，上限為總期數
-    const startDate=new Date(inst.startYear,inst.startMonth,1);
-    const monthsDiff=(NOW.getFullYear()-startDate.getFullYear())*12+(NOW.getMonth()-startDate.getMonth());
-    const paid=Math.min(Math.max(monthsDiff+1,0),inst.months);
-    const rem=inst.months-paid,pct=Math.round(paid/inst.months*100);
-    const ed=new Date(inst.startYear,inst.startMonth+inst.months-1,1);
-    const es=ed.getFullYear()+'/'+(ed.getMonth()+1);
-    return`<div class="ic">
-      <div style="display:flex;justify-content:space-between;align-items:start">
-        <div><div style="font-size:14px;font-weight:700">${inst.note||inst.category}</div>
-        <div style="font-size:12px;color:var(--t3);margin-top:2px">${inst.category} · 共 NT$${fmt(inst.total)} · 每月 NT$${fmt(inst.monthly)}</div></div>
-        <button onclick="delI(${inst.id})" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;padding:0">✕</button>
-      </div>
-      <div class="ipr"><div class="ib" style="width:${pct}%"></div></div>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:12px;color:var(--t3)">${paid}/${inst.months} 期 · 到 ${es}</span>
-        <span class="bdg ${rem<=0?'bgl':'bbl'}">${rem<=0?'已完成':`剩 ${rem} 期`}</span>
-      </div>
-    </div>`;
-  }).join('');
+  el.innerHTML='<div class="emp">載入中…</div>';
+  try{
+    // 讀取所有 main 資料，找出有分期標記的記錄
+    const allRows=await fetch(API).then(r=>r.json()).catch(()=>[]);
+    const rows=Array.isArray(allRows)?allRows:(allRows.main||[]);
+    
+    // 找出所有分期記錄，按備註+類別分組
+    const groups={};
+    rows.forEach(r=>{
+      if(!r.installment)return;
+      const m=String(r.installment).match(/^(\d+)\/(\d+)$/);
+      if(!m)return;
+      const cur=parseInt(m[1]),total=parseInt(m[2]);
+      // 用「類別+總期數+備註前綴」作為分組 key
+      const noteBase=String(r.note||'').replace(/\s*\[分期\d+\/\d+\]\s*/g,'').trim();
+      const key=r.category+'|'+total+'|'+noteBase;
+      if(!groups[key])groups[key]={category:r.category,note:noteBase,total:total,monthly:Number(r.amount),payments:[],dates:[]};
+      groups[key].payments.push(cur);
+      groups[key].dates.push(r.date);
+    });
+
+    // 篩選尚未付清的分期
+    const active=Object.values(groups).filter(g=>{
+      const maxPaid=Math.max(...g.payments);
+      return maxPaid<g.total;
+    });
+
+    if(!active.length){el.innerHTML='<div class="emp">目前沒有進行中的分期</div>';return;}
+
+    el.innerHTML=active.map(g=>{
+      const paid=Math.max(...g.payments);
+      const rem=g.total-paid;
+      const pct=Math.round(paid/g.total*100);
+      const totalAmt=g.monthly*g.total;
+      // 計算預估結束月份
+      const lastDate=g.dates.sort().pop();
+      const ld=new Date(lastDate);
+      const endDate=new Date(ld.getFullYear(),ld.getMonth()+rem,1);
+      const es=endDate.getFullYear()+'/'+(endDate.getMonth()+1);
+      return`<div class="ic">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div><div style="font-size:14px;font-weight:700">${g.note||g.category}</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:2px">${g.category} · 共 NT$${fmt(totalAmt)} · 每月 NT$${fmt(g.monthly)}</div></div>
+        </div>
+        <div class="ipr"><div class="ib" style="width:${pct}%"></div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--t3)">${paid}/${g.total} 期 · 預計到 ${es}</span>
+          <span class="bdg bbl">剩 ${rem} 期</span>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML='<div class="emp">載入失敗</div>';
+    console.error(e);
+  }
 }
-function delI(id){insts=insts.filter(i=>i.id!==id);localStorage.setItem('fi',JSON.stringify(insts));renderInsts();toast('已刪除分期');}
 
 /* ── Modal / Toast / CC ── */
 function showOv(y,m,rows,sub){
