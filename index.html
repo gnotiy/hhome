@@ -636,7 +636,7 @@ async function loadCat(){
       scales:{x:{grid:{display:false},ticks:{color:gc('#6A6662','#9A9692'),font:{size:12}}},y:{grid:{color:gc('rgba(255,255,255,.05)','rgba(0,0,0,.06)')},ticks:{color:gc('#6A6662','#9A9692'),font:{size:11},callback:v=>v>=1000?Math.round(v/1000)+'k':v}}}}});
 }
 
-/* ── 分期（從 Sheet 讀取，只計算日期≤今天的為已付）── */
+/* ── 分期（從 API 的 categoryLabel 解析 [分期X/Y]）── */
 async function renderInsts(){
   const el=document.getElementById('il');
   el.innerHTML='<div class="emp">載入中…</div>';
@@ -645,60 +645,52 @@ async function renderInsts(){
     const rows=Array.isArray(allRows)?allRows:(allRows.main||[]);
     const today=new Date().toISOString().split('T')[0];
 
-    // ★ Debug：找出有 installment 的記錄
-    const instRows=rows.filter(r=>r.installment && String(r.installment).trim()!=='');
-    console.log('總筆數:',rows.length,'有分期標記:',instRows.length);
-    if(instRows.length>0) console.log('分期範例:',JSON.stringify(instRows.slice(-3)));
-    else {
-      // 如果沒有 installment 欄位，看看最後幾筆資料的欄位有哪些
-      console.log('最後3筆資料欄位:',rows.length>0?Object.keys(rows[rows.length-1]):'無資料');
-      console.log('最後3筆:',JSON.stringify(rows.slice(-3)));
-    } // 'YYYY-MM-DD'
-
-    // 找出所有分期記錄，按備註+類別分組
     const groups={};
     rows.forEach(r=>{
-      if(!r.installment)return;
-      const m=String(r.installment).match(/^(\d+)\/(\d+)$/);
-      if(!m)return;
-      const cur=parseInt(m[1]),total=parseInt(m[2]);
-      const noteBase=String(r.note||'').replace(/\s*\[分期\d+\/\d+\]\s*/g,'').trim();
-      const key=r.category+'|'+total+'|'+noteBase;
-      if(!groups[key])groups[key]={category:r.category,note:noteBase,total:total,monthly:Number(r.amount),entries:[]};
-      groups[key].entries.push({cur,date:String(r.date||'')});
+      // 從所有文字欄位中搜尋 [分期X/Y]
+      const allText=[r.categoryLabel,r.note,r.installment].map(v=>String(v||'')).join(' ');
+      let match=allText.match(/\[分期(\d+)\/(\d+)\]/);
+      if(!match && r.installment) match=String(r.installment).match(/^(\d+)\/(\d+)$/);
+      if(!match) return;
+
+      const cur=parseInt(match[1]),total=parseInt(match[2]);
+      const dateStr=String(r.timestamp||r.date||'').slice(0,10);
+      // 相容新舊 API 格式
+      const cat=String(r.person||r.category||'');
+      const amt=Number(r.category)||Number(r.amount)||0;
+      const noteRaw=String(r.categoryLabel||r.note||'');
+      const noteBase=noteRaw.replace(/\s*\[分期\d+\/\d+\]\s*/g,'').trim();
+
+      const key=cat+'|'+total+'|'+noteBase;
+      if(!groups[key])groups[key]={category:cat,note:noteBase,total:total,monthly:amt,entries:[]};
+      groups[key].entries.push({cur,date:dateStr});
     });
 
-    // 篩選：只要有任何一期的日期在今天之後，就是「尚未付清」
     const active=Object.values(groups).filter(g=>{
-      // 已付 = 日期 <= 今天的期數
       const paidCount=g.entries.filter(e=>e.date<=today).length;
       return paidCount<g.total;
     });
 
     if(!active.length){el.innerHTML='<div class="emp">目前沒有進行中的分期</div>';return;}
 
-    // 按剩餘期數排序（剩越多的排前面）
     active.sort((a,b)=>{
-      const aPaid=a.entries.filter(e=>e.date<=today).length;
-      const bPaid=b.entries.filter(e=>e.date<=today).length;
-      return (a.total-aPaid)-(b.total-bPaid);
-    }).reverse();
+      const aRem=a.total-a.entries.filter(e=>e.date<=today).length;
+      const bRem=b.total-b.entries.filter(e=>e.date<=today).length;
+      return bRem-aRem;
+    });
 
     el.innerHTML=active.map(g=>{
       const paidCount=g.entries.filter(e=>e.date<=today).length;
       const rem=g.total-paidCount;
       const pct=Math.round(paidCount/g.total*100);
       const totalAmt=g.monthly*g.total;
-      // 找最後一期的日期作為結束日
       const allDates=g.entries.map(e=>e.date).sort();
       const lastDate=allDates[allDates.length-1];
       const ld=new Date(lastDate);
       const es=ld.getFullYear()+'/'+(ld.getMonth()+1);
       return`<div class="ic">
-        <div style="display:flex;justify-content:space-between;align-items:start">
-          <div><div style="font-size:14px;font-weight:700">${g.note||g.category}</div>
-          <div style="font-size:12px;color:var(--t3);margin-top:2px">${g.category} · 共 NT$${fmt(totalAmt)} · 每月 NT$${fmt(g.monthly)}</div></div>
-        </div>
+        <div><div style="font-size:14px;font-weight:700">${g.note||g.category}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:2px">${g.category} · 共 NT$${fmt(totalAmt)} · 每月 NT$${fmt(g.monthly)}</div></div>
         <div class="ipr"><div class="ib" style="width:${pct}%"></div></div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:12px;color:var(--t3)">已付 ${paidCount}/${g.total} 期 · 到 ${es}</span>
