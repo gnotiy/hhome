@@ -476,9 +476,6 @@ async function submit(){
     document.getElementById('amt').value='';document.getElementById('note').value='';
     document.getElementById('itog').checked=false;document.getElementById('ibox').style.display='none';
     document.querySelectorAll('.cb').forEach(b=>b.classList.remove('on'));selCat=null;
-    const mo=String(new Date(date).getMonth()+1).padStart(2,'0');
-    const rows=await fetch(`${API}?year=${new Date(date).getFullYear()}&month=${mo}`).then(r=>r.json()).catch(()=>[]);
-    showOv(new Date(date).getFullYear(),mo,Array.isArray(rows)?rows:[],'記帳成功 ✓');
   }catch(err){toast('送出失敗，請稍後再試');console.error(err);}
   btn.disabled=false;btn.innerHTML='送出記帳';
 }
