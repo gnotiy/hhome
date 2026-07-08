@@ -183,6 +183,28 @@ input:checked+.tsl:before{transform:translateX(20px)}
 .cbtn{width:100%;padding:12px;border:1px solid var(--bds);background:transparent;border-radius:var(--rs);font-size:14px;cursor:pointer;color:var(--t1);font-family:'Noto Sans TC',sans-serif;font-weight:500}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A1917;color:#fff;padding:10px 22px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200;white-space:nowrap;font-family:'Noto Sans TC',sans-serif}
 .toast.show{opacity:1}
+
+/* Success animation */
+.sok{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:300;pointer-events:none;opacity:0;background:rgba(0,0,0,0);transition:opacity .18s,background .18s}
+.sok.show{opacity:1;background:rgba(0,0,0,.14)}
+@media(prefers-color-scheme:dark){.sok.show{background:rgba(0,0,0,.4)}}
+.sok-box{display:flex;flex-direction:column;align-items:center;gap:18px;transform:scale(.85);transition:transform .2s}
+.sok.show .sok-box{transform:scale(1)}
+.sok-badge{position:relative;width:104px;height:104px;display:flex;align-items:center;justify-content:center}
+.sok-ring{position:absolute;inset:0;border-radius:50%;border:3px solid var(--g);opacity:0}
+.sok.show .sok-ring{animation:sokRing .75s ease-out forwards}
+.sok.show .sok-ring.r2{animation-delay:.12s}
+@keyframes sokRing{0%{transform:scale(.9);opacity:.55}100%{transform:scale(2.3);opacity:0}}
+.sok-circle{position:relative;width:104px;height:104px;border-radius:50%;background:var(--g);display:flex;align-items:center;justify-content:center;box-shadow:0 14px 44px rgba(29,158,117,.5)}
+.sok.show .sok-circle{animation:sokPop .5s cubic-bezier(.2,.8,.3,1.25) both}
+@keyframes sokPop{0%{transform:scale(0)}62%{transform:scale(1.14)}100%{transform:scale(1)}}
+.sok-circle svg{width:60px;height:60px}
+.sok-check{fill:none;stroke:#fff;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:44;stroke-dashoffset:44}
+.sok.show .sok-check{animation:sokCheck .38s .2s ease forwards}
+@keyframes sokCheck{to{stroke-dashoffset:0}}
+.sok-msg{font-size:17px;font-weight:700;color:var(--t1);background:var(--sf);padding:11px 22px;border-radius:22px;box-shadow:0 8px 28px rgba(0,0,0,.18);white-space:nowrap;max-width:88vw;overflow:hidden;text-overflow:ellipsis;opacity:0}
+.sok.show .sok-msg{animation:sokMsg .35s .16s ease forwards}
+@keyframes sokMsg{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
@@ -317,6 +339,16 @@ input:checked+.tsl:before{transform:translateX(20px)}
   </div>
 </div>
 <div class="toast" id="tst"></div>
+<div class="sok" id="sok">
+  <div class="sok-box">
+    <div class="sok-badge">
+      <span class="sok-ring"></span>
+      <span class="sok-ring r2"></span>
+      <div class="sok-circle"><svg viewBox="0 0 52 52"><path class="sok-check" d="M14 27l8 8 16-18"/></svg></div>
+    </div>
+    <div class="sok-msg" id="sokMsg"></div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
@@ -450,34 +482,60 @@ function togi(){document.getElementById('ibox').style.display=document.getElemen
 function uprev(){const a=parseFloat(document.getElementById('amt').value)||0;document.getElementById('iprev').textContent=a>0?`每月約 NT$${Math.ceil(a/selM).toLocaleString()}，共 ${selM} 個月`:'請先輸入金額';}
 async function send(p){await fetch(API+'?'+new URLSearchParams(p).toString(),{mode:'no-cors'});}
 
+let sokTimer=null;
+function showSuccess(msg){
+  const ov=document.getElementById('sok');
+  document.getElementById('sokMsg').textContent=msg;
+  ov.classList.remove('show');void ov.offsetWidth; // 重啟動畫（連續送出時）
+  ov.classList.add('show');
+  if(navigator.vibrate)try{navigator.vibrate(30);}catch(e){}
+  clearTimeout(sokTimer);
+  sokTimer=setTimeout(()=>ov.classList.remove('show'),1200);
+}
+
+let submitting=false;
 async function submit(){
+  if(submitting)return; // 防止極短時間內重複送出
   if(!selCat){toast('請選擇類別');return;}
   const amt=parseFloat(document.getElementById('amt').value);
   if(!amt||amt<=0){toast('請輸入正確金額');return;}
   const date=document.getElementById('dt').value,note=document.getElementById('note').value.trim();
   const isInst=document.getElementById('itog').checked&&selCat!=='收入';
-  const btn=document.getElementById('sbtn');btn.disabled=true;btn.innerHTML='<span class="spin"></span>送出中…';
-  try{
-    if(isInst){
-      const mo=Math.ceil(amt/selM),st=new Date(date);
-      const obj={id:Date.now(),category:selCat,total:amt,monthly:mo,months:selM,note,startYear:st.getFullYear(),startMonth:st.getMonth()};
-      insts.push(obj);localStorage.setItem('fi',JSON.stringify(insts));
-      for(let i=0;i<selM;i++){
-        const d=new Date(st.getFullYear(),st.getMonth()+i,1);
-        const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';
-        await send({date:ds,category:selCat,amount:mo,note:(note?note+' ':'')+'[分期'+(i+1)+'/'+selM+']',installment:(i+1)+'/'+selM});
-        invalidate(ds);
-      }
-    }else{
-      await send({date,category:selCat,amount:amt,note,installment:''});
-      invalidate(date);
+
+  // 準備所有寫入請求（先不 await，讓畫面立即回應）
+  const writes=[],touched=new Set();
+  if(isInst){
+    const mo=Math.ceil(amt/selM),st=new Date(date);
+    const obj={id:Date.now(),category:selCat,total:amt,monthly:mo,months:selM,note,startYear:st.getFullYear(),startMonth:st.getMonth()};
+    insts.push(obj);localStorage.setItem('fi',JSON.stringify(insts));
+    for(let i=0;i<selM;i++){
+      const d=new Date(st.getFullYear(),st.getMonth()+i,1);
+      const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';
+      writes.push(send({date:ds,category:selCat,amount:mo,note:(note?note+' ':'')+'[分期'+(i+1)+'/'+selM+']',installment:(i+1)+'/'+selM}));
+      touched.add(ds.slice(0,7));
     }
-    toast(isInst?`分期建立！每月 NT$${Math.ceil(amt/selM).toLocaleString()}，共 ${selM} 期`:`NT$${amt.toLocaleString()} 已記錄 ✓`);
-    document.getElementById('amt').value='';document.getElementById('note').value='';
-    document.getElementById('itog').checked=false;document.getElementById('ibox').style.display='none';
-    document.querySelectorAll('.cb').forEach(b=>b.classList.remove('on'));selCat=null;
-  }catch(err){toast('送出失敗，請稍後再試');console.error(err);}
-  btn.disabled=false;btn.innerHTML='送出記帳';
+  }else{
+    writes.push(send({date,category:selCat,amount:amt,note,installment:''}));
+    touched.add(String(date).slice(0,7));
+  }
+  // 清掉受影響月份的快取（下次看數據才會重抓）
+  touched.forEach(k=>delete mem[k]);
+  try{localStorage.setItem(CK,JSON.stringify(mem));}catch(e){}
+
+  // ★ 樂觀更新：立刻顯示成功動畫＋清空表單，不等後端回應
+  showSuccess(isInst?`分期建立 · 每月 NT$${Math.ceil(amt/selM).toLocaleString()}`:`已記錄 NT$${amt.toLocaleString()}`);
+  document.getElementById('amt').value='';document.getElementById('note').value='';
+  document.getElementById('itog').checked=false;document.getElementById('ibox').style.display='none';
+  document.querySelectorAll('.cb').forEach(b=>b.classList.remove('on'));selCat=null;
+
+  submitting=true;setTimeout(()=>{submitting=false;},400);
+
+  // 背景等待寫入；no-cors 只能偵測到網路層級失敗，整批都失敗才提醒
+  Promise.allSettled(writes).then(rs=>{
+    if(rs.length&&rs.every(r=>r.status==='rejected')){
+      toast('⚠️ 送出可能失敗，請確認網路後重記');
+    }
+  });
 }
 
 /* ── 月報表 ── */
